@@ -4,12 +4,19 @@
 
 ## Description
 
-philosophers is an implementation of the classic Dining Philosophers problem in C, focused on concurrency, synchronization, and avoiding deadlocks and starvation.
+philosophers is an implementation of the classic Dining Philosophers problem in C, focused on concurrency, synchronization, fairness, and avoiding deadlocks and starvation.
 
-This repository contains two independent implementations:
+This repository contains three implementations:
 
 - `philo/` mandatory uses POSIX threads and mutexes. Each philosopher is a thread. Philosophers sit around a table and repeatedly take their left and right fork, eat, sleep, and think. Forks are individual mutexes and each fork mutex is shared between two neighboring philosophers.
-- `philo_bonus/` bonus uses processes and POSIX semaphores. Each philosopher is a process. Forks are a shared pool in the middle of the table, implemented as one counting semaphore initialized to number_of_philosophers. Each eating phase consumes two semaphore units and releases them after eating.
+- `philo_bonus/` uses processes and POSIX semaphores. Each philosopher runs in its own process. Forks are represented as a shared pool, implemented with a counting semaphore initialized to the number of philosophers. To eat, a philosopher acquires two semaphore units and releases them again after eating.
+- `philo_check_neighbours/` is an alternative thread-based version where philosophers check their direct neighbors before trying to eat. Instead of relying on a dedicated scheduler, each philosopher decides locally whether it is allowed to continue. This creates a decentralized fairness mechanism.
+
+<br>
+
+## Platform support
+
+This project is developed for Unix-like systems, primarily Linux. It relies on POSIX APIs, standard Unix system calls, and a Makefile-based build system, so it is generally not intended to run natively on Windows without adaptation. On Windows, the recommended way to build and run it is through WSL.
 
 <br>
 
@@ -28,6 +35,13 @@ Bonus version.
 
 ```bash
 cd philo_bonus
+make
+```
+
+Neighbour-check version.
+
+```bash
+cd philo_check_neighbours
 make
 ```
 
@@ -55,18 +69,29 @@ Bonus example:
 ./philo_bonus 5 800 200 200 7
 ```
 
+Neighbour-check example:
+
+```bash
+./philo_check_neighbours 5 800 200 200
+./philo_check_neighbours 5 800 200 200 7
+```
+
 Expected output:
 
 - Every log line starts with a timestamp in milliseconds since program start.
 - Format: `<ms_since_start> <id> <action>`.
-- Printing is serialized to avoid interleaved output.
+- Actions include taking forks, eating, sleeping, thinking, and death detection.
+- Output is serialized to avoid interleaved prints.
 
-Optional debug tools.
+
+Optional debug tools:
 
 ```bash
 valgrind --leak-check=full ./philo 5 800 200 200 2
 valgrind --tool=helgrind ./philo 5 800 200 200 2
 ```
+
+Note: Valgrind support is generally limited to Linux. On macOS, use other debugging or leak-checking tools if needed.
 
 <br>
 
@@ -75,17 +100,23 @@ valgrind --tool=helgrind ./philo 5 800 200 200 2
 ### `philo` mandatory
 
 - One thread per philosopher.
-- One mutex `pthread_mutex_t` per fork, shared by neighboring philosophers.
-- Two monitor threads handle `death_flag` and `philos_satisfied_flag`.
-- Optional fairness for odd counts using phased `permit` plus `done_eating` barrier.
+- One `pthread_mutex_t` per fork, shared by neighboring philosophers.
+- Two monitor threads handle death detection and optional meal completion.
+- Fairness is coordinated by a third monitor thread using scheduler logic.
 
 ### `philo_bonus` bonus
 
 - One process per philosopher.
-- Forks are a shared pool via one counting semaphore sem_t `forks`.
+- Forks are a shared pool via one counting semaphore `forks`.
 - Each child runs its own death monitor thread.
-- Parent runs one fairness scheduler using per philosopher `permits` plus `done_eating` barrier.
-- Parent reaps children and shuts down.
+- The parent process coordinates fairness through a third monitor thread and handles shutdown.
+
+### `philo_check_neighbours`
+
+- Same overall implementation as the mandatory version, except for the fairness logic.
+- There is no separate scheduler deciding turns.
+- Instead, each philosopher checks the meal counters of the left and right neighbors before eating.
+- A philosopher may proceed only if both neighbors have eaten at least as many times.
 
 <br>
 
@@ -96,21 +127,33 @@ valgrind --tool=helgrind ./philo 5 800 200 200 2
 ├── philo/
 │   ├── philo.c
 │   ├── philo.h
-│   ├── meals_and_death.c
-│   ├── sceduler.c
+│   ├── monitors.c
+│   ├── scheduler.c
 │   └── ...
-└── philo_bonus/
-    ├── philo_bonus.c
-    ├── philo_bonus.h
-    ├── routine_bonus.c
-    ├── sceduler_bonus.c
-    ├── children_bonus.c
+├── philo_bonus/
+│   ├── philo_bonus.c
+│   ├── philo_bonus.h
+│   ├── routine_bonus.c
+│   ├── scheduler_bonus.c
+│   ├── children_bonus.c
+│   └── ...
+└── philo_check_neighbours/
+    ├── Makefile
+    ├── philo.c
+    ├── philo.h
+    ├── routine.c
+    ├── forks.c
+    ├── monitors.c
     └── ...
 ```
 
-<br>
+Executable names:
 
-## Resources
+- `philo`
+- `philo_bonus`
+- `philo_check_neighbours`
+
+<br>
 
 ## Resources
 
@@ -119,17 +162,11 @@ valgrind --tool=helgrind ./philo 5 800 200 200 2
   - `fork`, `waitpid`, `kill`
   - `sem_open`, `sem_close`, `sem_unlink`, `sem_wait`, `sem_post`
 
-
 <br>
 
-### Use of AI
+## Visualizer
 
-AI tools were used as a **supporting resource** for:
+For a visual demonstration of the Dining Philosophers problem, see the [Philosophers Visualizer](https://nafuka11.github.io/philosophers-visualizer/).
 
-- clarifying expected behavior and common pitfalls in the Dining Philosophers problem,
-- discussing deadlock avoidance and fairness scheduling approaches,
-- reviewing thread, process, mutex, and semaphore usage patterns,
-- analyzing error paths and shutdown conditions,
-- drafting and editing documentation.
-
-All code was written and integrated by the project author.
+You can use it with this project by copying and pasting the program output into the visualizer.
+This makes it easier to follow the execution flow and observe philosopher behavior.
